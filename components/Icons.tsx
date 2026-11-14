@@ -1,0 +1,30 @@
+import type { ReactNode } from 'react';
+type IconName = 'grid'|'chart'|'sparkles'|'settings'|'search'|'refresh'|'arrow'|'external'|'clock'|'shield'|'filter'|'chevron'|'close'|'star'|'starFill'|'bolt'|'database'|'check'|'copy'|'plus'|'download'|'warning'|'terminal'|'info'|'moon';
+const paths:Record<IconName,ReactNode>={
+  grid:<><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></>,
+  chart:<><path d="M3 3v18h18"/><path d="M7 15l4-4 3 2 5-7"/></>,
+  sparkles:<><path d="m12 3 1.9 6.1L20 11l-6.1 1.9L12 19l-1.9-6.1L4 11l6.1-1.9L12 3Z"/><path d="m19 18 .6 1.4L21 20l-1.4.6L19 22l-.6-1.4L17 20l1.4-.6L19 18Z"/></>,
+  settings:<><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="m19 13 2-1-2-1-.5-2 1-2-2-2-2 1-2-.5L12 3l-1.5 2.5-2 .5-2-1-2 2 1 2L5 11l-2 1 2 1 .5 2-1 2 2 2 2-1 2 .5L12 21l1.5-2.5 2-.5 2 1 2-2-1-2Z"/></>,
+  search:<><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></>,
+  refresh:<><path d="M20 10a8 8 0 0 0-14-5L4 7"/><path d="M4 3v4h4"/><path d="M4 14a8 8 0 0 0 14 5l2-2"/><path d="M16 17h4v4"/></>,
+  arrow:<path d="M5 12h14m-6-6 6 6-6 6"/>,
+  external:<><path d="M14 4h6v6"/><path d="m10 14 10-10"/><path d="M20 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5"/></>,
+  clock:<><circle cx="12" cy="12" r="9"/><path d="M12 7v5l4 2"/></>,
+  shield:<><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></>,
+  filter:<><path d="M4 6h16M7 12h10m-7 6h4"/></>,
+  chevron:<path d="m9 18 6-6-6-6"/>,
+  close:<path d="M5 5l14 14M19 5 5 19"/>,
+  star:<path d="m12 2 3.1 6.3 7 .9-5 4.9 1.2 7-6.3-3.3-6.3 3.3 1.2-7-5-4.9 7-.9L12 2Z"/>,
+  starFill:<path fill="currentColor" d="m12 2 3.1 6.3 7 .9-5 4.9 1.2 7-6.3-3.3-6.3 3.3 1.2-7-5-4.9 7-.9L12 2Z"/>,
+  bolt:<path d="M13 2 4 14h7l-1 8 10-13h-7l0-7Z"/>,
+  database:<><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"/></>,
+  check:<path d="m4 12 5 5L20 6"/>,
+  copy:<><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></>,
+  plus:<path d="M12 4v16M4 12h16"/>,
+  download:<><path d="M12 3v13m-5-5 5 5 5-5M4 18v3h16v-3"/></>,
+  warning:<><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5m0 3v1"/></>,
+  terminal:<><rect x="2" y="3" width="20" height="18" rx="3"/><path d="m6 9 3 3-3 3m6 0h5"/></>,
+  info:<><circle cx="12" cy="12" r="10"/><path d="M12 11v6m0-10h.01"/></>,
+  moon:<path d="M20 16A9 9 0 0 1 8 4a9 9 0 1 0 12 12Z"/>,
+};
+export default function Icon({name,size=18,className=''}:{name:IconName;size?:number;className?:string}){return <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;}

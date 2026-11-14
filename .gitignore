@@ -1,0 +1,12 @@
+node_modules
+.next
+recommender/data
+recommender/**/__pycache__
+games.csv
+.env
+.env.local
+.env.*.local
+*.log
+*.whl
+.DS_Store
+*.tsbuildinfo

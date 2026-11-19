@@ -54,7 +54,8 @@ GameCollectionHelper/                  Git 仓库根（= WORKPLACE/）
 │       ├── test_selection.py          取样逻辑（仅标准库）
 │       └── test_service_api.py        FastAPI 契约测试（无 fastapi 时自动 skip）
 ├── scripts/
-│   └── bootstrap.ps1                  一键环境初始化
+│   ├── bootstrap.ps1                  一键环境初始化
+│   └── acceptance_test.py             验收测试（按题目 5 项要求逐条校验，仅标准库）
 ├── docker/
 │   ├── recommender.Dockerfile         Python 3.12 + CPU torch + FastAPI
 │   └── web.Dockerfile                 Next.js 三阶段构建

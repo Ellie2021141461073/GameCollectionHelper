@@ -157,14 +157,29 @@ powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1
 日常检查：
 
 ```bash
-npm run check        # typecheck + ruff + 前端单测 + Python 单测
-npm run typecheck    # 仅 TypeScript 类型检查
-npm test             # 仅前端单测（tests/*.test.mjs）
-npm run test:py      # 仅 Python 单测（tests/python）
-npm run lint:py      # 仅 ruff
-npm run data:stats   # 打印 games.csv 规模统计
-npm run build        # 生产构建
+npm run check            # typecheck + ruff + 前端单测 + Python 单测
+npm run typecheck        # 仅 TypeScript 类型检查
+npm test                 # 仅前端单测（tests/*.test.mjs）
+npm run test:py           # 仅 Python 单测（tests/python）
+npm run lint:py           # 仅 ruff
+npm run test:acceptance   # 验收测试（需服务已启动，见下）
+npm run data:stats        # 打印 games.csv 规模统计
+npm run build             # 生产构建
 ```
+
+### 验收测试
+
+`scripts/acceptance_test.py` 按选题 Topic 1 的 5 项关键任务逐条校验运行中的系统，
+每条检查都标注了它对应的要求编号（R1 数据采集 / R2 特征增强 / R3 数据管理 /
+R4 混合检索 / R5 解释生成），另外覆盖错误码与延迟：
+
+```powershell
+docker compose up -d                          # 或本地 npm run recommend:api + npm run dev
+python scripts/acceptance_test.py             # 全部通过时退出码为 0
+python scripts/acceptance_test.py --verbose   # 打印样例数据与每步细节
+```
+
+脚本只用标准库，不需要安装任何依赖；`--skip-web` 可跳过 Next.js 相关检查。
 
 `recommender/` 的 `text.py`、`ranking.py`、`clean.py`、`dataset_stats.py` 只依赖标准库，
 不安装 torch 也能跑测试；API 契约测试在缺少 fastapi 时会自动跳过。

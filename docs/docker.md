@@ -64,6 +64,12 @@ curl http://127.0.0.1:8000/status     # documents 应为 20000
 curl http://127.0.0.1:3000/api/recommender/status
 ```
 
+完整的验收测试（按选题 5 项关键任务逐条校验，只用标准库）：
+
+```powershell
+python scripts/acceptance_test.py --verbose
+```
+
 然后打开 <http://localhost:3000>。
 
 ## 4. 常用命令

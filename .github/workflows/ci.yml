@@ -74,7 +74,7 @@ jobs:
           python -m pip install -r requirements-dev.txt
 
       - name: Lint
-        run: python -m ruff check recommender tests/python
+        run: python -m ruff check recommender tests/python scripts
 
       - name: Tests
         run: python -m unittest discover -s tests/python -v

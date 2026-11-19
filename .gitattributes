@@ -1,0 +1,24 @@
+# Keep one canonical representation in the repository (LF) and let the working
+# tree follow the platform. Windows checkouts still use core.autocrlf.
+* text=auto
+
+*.py    text
+*.ts    text
+*.tsx   text
+*.css   text
+*.mjs   text
+*.json  text
+*.md    text
+*.toml  text
+*.yml   text
+*.yaml  text
+
+# Data and binary assets: never normalise, never attempt a text diff.
+*.csv    binary
+*.sqlite binary
+*.pdf    binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.ico    binary
+*.woff2  binary

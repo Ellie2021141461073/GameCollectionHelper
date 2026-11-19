@@ -1,0 +1,46 @@
+# Tooling configuration for the Python side of GameCollectionHelper.
+#
+# Runtime dependencies deliberately stay in recommender/requirements.txt: that
+# file is what README.md and the deployment steps tell people to install, so a
+# second copy of the version ranges here would only let the two drift apart.
+# This file configures the linters and the test convention instead.
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["recommender", "tests/python"]
+extend-exclude = [
+    "recommender/data",   # generated Qdrant store and model cache
+]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # import sorting
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "RET",  # flake8-return
+    "PTH",  # flake8-use-pathlib
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["recommender"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test modules import inside a try block on purpose: the API contract tests skip
+# themselves when fastapi/httpx are not installed.
+"tests/python/test_service_api.py" = ["E402"]
+
+[tool.coverage.run]
+source = ["recommender"]
+omit = [
+    "recommender/data/*",
+    "recommender/smoke_test.py",
+]
+
+[tool.coverage.report]
+skip_empty = true

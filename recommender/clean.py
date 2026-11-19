@@ -158,14 +158,20 @@ def parse_list(value: str) -> list[str]:
     if not raw:
         return []
     parsed: list[str] = []
+    is_literal = False
     if raw.startswith("["):
         try:
             candidate = ast.literal_eval(raw)
-            if isinstance(candidate, (list, tuple, set)):
-                parsed = [str(item) for item in candidate]
         except (ValueError, SyntaxError):
-            parsed = []
-    if not parsed:
+            candidate = None
+        else:
+            is_literal = True
+        if isinstance(candidate, (list, tuple, set)):
+            parsed = [str(item) for item in candidate]
+    # "[]" means "no values": only fall back to comma splitting when the cell
+    # was not a parseable Python literal, otherwise the empty list would turn
+    # into a literal "[]" tag (8.7k rows of games.csv carry Tags="[]").
+    if not is_literal:
         parsed = raw.split(",")
     seen: set[str] = set()
     result: list[str] = []

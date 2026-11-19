@@ -21,7 +21,12 @@ load_dotenv(PROJECT_ROOT / ".env.local")
 load_dotenv(PROJECT_ROOT / ".env")
 
 app = FastAPI(title="GameCollectionHelper Hybrid Recommender", version="1.0.0")
-origins = [origin.strip() for origin in os.getenv("RECOMMENDER_CORS_ORIGINS", "http://localhost:3000").split(",")]
+#: Minimum SequenceMatcher ratio for a name substitution, see find_source().
+FUZZY_MATCH_CUTOFF = 0.82
+origins = [
+    origin.strip()
+    for origin in os.getenv("RECOMMENDER_CORS_ORIGINS", "http://localhost:3000").split(",")
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -125,11 +130,20 @@ def find_source(state: SearchState, query: str) -> Document:
     if contains:
         return min(contains, key=lambda doc: len(str(doc.payload.get("name", ""))))
     names = [str(doc.payload.get("normalized_name", "")) for doc in state.documents]
-    matches = get_close_matches(normalized, names, n=1, cutoff=0.72)
-    if matches:
-        match = matches[0]
-        return next(doc for doc in state.documents if doc.payload.get("normalized_name") == match)
-    raise HTTPException(status_code=404, detail=f"未找到游戏：{query}")
+    # Typo tolerance is only acceptable when the candidate still looks like the
+    # same title. With a bare cutoff of 0.72, "Stardew Valley" resolves to
+    # "Red Valley" (SequenceMatcher ratio 0.75) and the API returns neighbours
+    # of a completely different game instead of saying it is not indexed.
+    for match in get_close_matches(normalized, names, n=3, cutoff=FUZZY_MATCH_CUTOFF):
+        if not normalized or match[:1] != normalized[:1]:
+            continue
+        return next(
+            doc for doc in state.documents if doc.payload.get("normalized_name") == match
+        )
+    raise HTTPException(
+        status_code=404,
+        detail=f"未找到游戏：{query}（当前索引共 {len(state.documents)} 款，可能尚未增强）",
+    )
 
 
 def fallback_reason(source: dict[str, Any], result: dict[str, Any]) -> str:

@@ -79,13 +79,16 @@ class ServiceContractTest(unittest.TestCase):
         import recommender.service as service
 
         self.service = service
-        service._state = SearchState(
-            client=FakeQdrantClient(),
-            documents=self.documents,
-            bm25=BM25Index([document.tokens for document in self.documents]),
-        )
         service._explanation_cache.clear()
+        self.set_documents(self.documents)
         self.client = TestClient(app)
+
+    def set_documents(self, documents: list[Document]) -> None:
+        self.service._state = SearchState(
+            client=FakeQdrantClient(),
+            documents=documents,
+            bm25=BM25Index([document.tokens for document in documents]),
+        )
 
     def tearDown(self) -> None:
         self.service._state = None
@@ -133,6 +136,35 @@ class ServiceContractTest(unittest.TestCase):
     def test_unknown_game_returns_404(self) -> None:
         response = self.client.get("/similar", params={"q": "No Such Game Anywhere"})
         self.assertEqual(response.status_code, 404)
+
+    def test_fuzzy_name_must_not_substitute_a_different_game(self) -> None:
+        """Regression: "Stardew Valley" used to resolve to "Red Valley"."""
+        self.set_documents([
+            make_document(1, "Alpha Farm", "cozy farming simulation"),
+            make_document(2, "Red Valley", "horror exploration"),
+        ])
+        response = self.client.get("/similar", params={"q": "Stardew Valley"})
+        self.assertEqual(response.status_code, 404)
+
+    def test_typo_in_a_name_still_resolves(self) -> None:
+        self.set_documents([
+            make_document(1, "Alpha Farm", "cozy farming simulation"),
+            make_document(2, "Gamma Shooter", "fast action shooter"),
+        ])
+        with mock.patch.object(self.service, "qdrant_search", return_value=[(1, 0.5)]):
+            response = self.client.get("/similar", params={"q": "Gamme Shooter"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["source"]["app_id"], 2)
+
+    def test_partial_name_resolves_to_the_shortest_title(self) -> None:
+        self.set_documents([
+            make_document(1, "Alpha Farm Deluxe Edition", "cozy farming simulation"),
+            make_document(2, "Alpha Farm", "cozy farming simulation"),
+        ])
+        with mock.patch.object(self.service, "qdrant_search", return_value=[(1, 0.5)]):
+            response = self.client.get("/similar", params={"q": "Alpha"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["source"]["app_id"], 2)
 
     def test_blank_game_name_returns_400(self) -> None:
         response = self.client.get("/similar", params={"q": "   "})

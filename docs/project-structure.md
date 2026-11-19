@@ -37,6 +37,7 @@ GameCollectionHelper/                  Git 仓库根（= WORKPLACE/）
 │   ├── text.py                        ① 分词与停用词（纯函数，仅标准库）
 │   ├── ranking.py                     ② BM25 / 质量先验 / RRF 融合（纯函数，仅标准库）
 │   ├── clean.py                       games.csv 清洗与 39/40 列错位修复（仅标准库）
+│   ├── selection.py                   增强取样：按评论数挑选候选（仅标准库）
 │   ├── dataset_stats.py               数据集统计（仅标准库，装依赖前即可跑）
 │   ├── store.py                       ③ Qdrant 客户端与 payload 组装
 │   ├── embeddings.py                  ③ BGE-M3 向量（懒加载 sentence-transformers）
@@ -49,6 +50,7 @@ GameCollectionHelper/                  Git 仓库根（= WORKPLACE/）
 │   ├── math.test.mjs                  前端纯函数单测（node --test）
 │   └── python/                        Python 单测（unittest）
 │       ├── test_clean.py  test_text.py  test_ranking.py     仅标准库
+│       ├── test_selection.py          取样逻辑（仅标准库）
 │       └── test_service_api.py        FastAPI 契约测试（无 fastapi 时自动 skip）
 ├── scripts/
 │   └── bootstrap.ps1                  一键环境初始化
@@ -81,15 +83,15 @@ app/ ─────────────► lib/                    （页�
 app/api/recommender ──HTTP──► recommender/service.py
 
 service.py ──► ranking.py, text.py, clean.py, store.py, embeddings.py, chat.py
-enrich_qdrant.py ──► clean.py, store.py, embeddings.py, chat.py
+enrich_qdrant.py ──► clean.py, selection.py, store.py, embeddings.py, chat.py
 
-ranking.py / text.py / clean.py / dataset_stats.py
+ranking.py / text.py / clean.py / selection.py / dataset_stats.py
     ↑ 只允许标准库，禁止 import qdrant_client / openai / fastapi / torch
 ```
 
 规则与理由：
 
-1. **纯逻辑层（`text` / `ranking` / `clean` / `dataset_stats`）不得引入第三方依赖。**
+1. **纯逻辑层（`text` / `ranking` / `clean` / `selection` / `dataset_stats`）不得引入第三方依赖。**
    这是 `npm run test:py` 能在没有 torch、没有 Qdrant 的机器上跑完的原因，
    也是 CI 的 `python-unit` job 故意不执行 `pip install` 的原因。
 2. **I/O 层（`store` / `embeddings` / `chat`）只做外部系统适配**，

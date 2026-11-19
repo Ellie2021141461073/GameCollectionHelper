@@ -287,3 +287,84 @@ DEEPSEEK_MODEL=CS5351/DeepSeek-V4-Flash
 
 > **未执行**：`git push`。远程 `main` 已有团队提交，本地新增分支内容需要你先确认再推送。
 > 推送命令：`git push origin main`（需要 GitHub 凭据）。
+
+---
+
+## 7. 工程化进展（本轮更新）
+
+### 7.1 环境（P0）已全部打通
+
+| 项 | 之前 | 现在 |
+| --- | --- | --- |
+| 前端依赖 | 未安装 | `npm install` 完成（26 个包） |
+| Python 环境 | 无 venv，系统 Python 3.14 | `.venv` = **3.12.13**，`requirements-dev.txt` 已装 |
+| PyTorch | 缺失 | **2.6.0+cu124**，`torch.cuda.is_available() == True` |
+| sentence-transformers | 缺失 | 5.7.0 |
+| BGE-M3 权重 | 未下载 | 已缓存 `recommender/data/embeddings-bge-m3`（2.27 GB） |
+| Qdrant 路径 | `qdrant/qdrant` | `recommender/data/qdrant`（与 `.env.local` 一致） |
+
+### 7.2 服务已对真实数据端到端跑通（实测）
+
+| 检查 | 结果 |
+| --- | --- |
+| `GET /status` | `ready=true`、`documents=20000`、`vector_size=1024`、`device=cuda` |
+| `GET /similar?q=496350` | 200，源 `Supipara - Chapter 1…`，返回 NEKOPARA Vol.4 / Yukikoi Melt 等同类 |
+| `GET /search?q=a relaxing video game…` | 200，返回拼图/治愈类小游戏，中文解释由 DeepSeek 生成 |
+| 冷启动 `/status` | 27–30 s（读 2 万点 + 建 BM25 索引） |
+| 冷启动首次 `/search` | 42.8 s（含模型入显存） |
+| 温态 `/search`（n=10） | min 1.98 s / **p50 2.45 s** / p95 7.19 s |
+
+> 温态波动主要来自 LLM 解释调用（校内网关），检索本身在百毫秒级。
+
+### 7.3 已完成的工程改造
+
+| 类别 | 内容 |
+| --- | --- |
+| 结构 | 从 `service.py` 拆出 `text.py` / `ranking.py`（纯函数、零依赖）；新增 `selection.py` |
+| 测试 | **64 个用例**：clean / text / ranking / selection 仅用标准库；13 个 FastAPI 契约用例 |
+| 质量 | ruff（E/F/W/I/B/UP/C4/SIM/RET/PTH，行宽 100）全绿；`zip(strict=)`、`Path.open` 等统一 |
+| 工具链 | `pyproject.toml`、`.editorconfig`、`.gitattributes`、`requirements-dev.txt` |
+| 脚本 | `scripts/bootstrap.ps1`（优先用 uv，支持 `-Full` 装重型运行栈） |
+| CI | `.github/workflows/ci.yml`：web / python-unit（零依赖）/ python-api 三个 job |
+| 文档 | `docs/project-structure.md`、`CONTRIBUTING.md`、README 开发章节 |
+| 一句话检查 | `npm run check`（typecheck + ruff + 前端单测 + Python 单测） |
+
+### 7.4 仍然待办
+
+| 项 | 说明 |
+| --- | --- |
+| 重建索引 | 现索引缺少热门游戏（见 §8.1），需 `--order-by reviews --reset` 重跑，成本约 3 万次 LLM 调用 |
+| 评测集与 `evaluate.py` | Recall@k / NDCG 与 BM25/向量/RRF 消融；属报告素材，本轮按要求跳过 |
+| Release 上传 `games.csv` | README 第 21 行的下载链接目前是死链 |
+| Docker / Qdrant server 模式 | 本机没有 Docker，未验证，故未提交 compose 文件 |
+| LICENSE | 属法务决策，未擅自添加 |
+
+---
+
+## 8. 本轮新发现的三个问题
+
+### 8.1 索引样本代表性差（数据侧，未修数据）
+
+- **实测**：20,000 条索引里 `review_count` 中位数 **105**、p99 51,033；
+  **Stardew Valley(413150) 与 Cyberpunk 2077(1091500) 不在索引内**，
+  而 Dota 2(570)、CS2(730) 恰好在。
+- **原因**：`iter_games` 按 `games.csv` 行序取前 2 万条，等于随机抽样。
+- **已加能力**：`enrich_qdrant --order-by reviews`。实测选出的前 20 名为
+  CS2 / PUBG / Dota 2 / GTA V / Terraria / R6 Siege / Rust / TF2 / Garry's Mod /
+  Black Myth / ELDEN RING / HELLDIVERS 2 / Apex / L4D2 / Wallpaper Engine /
+  **Stardew Valley** / ETS2 / **Cyberpunk 2077** / The Witcher 3。
+- **未做**：重建需要重新调用 LLM 约 3 万次，耗时与额度较大，留待你决定。
+
+### 8.2 `find_source` 会把游戏名替换成别的游戏（已修复）
+
+- `cutoff=0.72` 时 `"Stardew Valley"` 被解析成 `"Red Valley"`
+  （SequenceMatcher 比值 0.75），于是返回了另一款游戏的邻居。
+- 已改为 `cutoff=0.82` **且首字符必须一致**：容忍拼写错误，不接受换词替代；
+  查不到时返回 404 并在详情里给出索引规模。已补 3 个回归用例。
+
+### 8.3 首次下载 BGE-M3 会因 Xet 传输失败（已记录绕法）
+
+- 现象：`OSError: I/O error ... (os error 5)`，发生在 `huggingface_hub` 的 Xet 下载路径。
+- 绕法：`$env:HF_HUB_DISABLE_XET = "1"` 后重试，实测 1280 MB / 20 s 下载成功。
+- 已写入 `recommender/README.md` 的「首次下载 BGE-M3 失败」小节。
+

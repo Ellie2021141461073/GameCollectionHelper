@@ -1,0 +1,126 @@
+# 贡献指南（Contributing）
+
+本文约定本仓库的分支模型、提交信息格式与提交前检查。目标是让 8 个人的改动
+可以并行推进，同时保持 `main` 随时可运行。
+
+---
+
+## 1. 分支模型
+
+```text
+feature-*  ──►  dev  ──►  main
+（个人开发）    （集成）    （可运行 / 可演示）
+```
+
+| 分支 | 用途 | 规则 |
+| --- | --- | --- |
+| `main` | 可运行、可演示的版本 | 只能从 `dev` 合并；合并前 CI 必须全绿 |
+| `dev` | 日常集成 | 功能分支合入这里，出问题在这里修 |
+| `feature-*` | 个人或小组功能 | 从最新 `dev` 切出，合并前先 `git rebase dev` |
+
+```bash
+git switch dev
+git pull --ff-only origin dev
+git switch -c feature-recommend-eval
+# ... 开发 ...
+npm run check                 # 提交前必须全绿
+git add -p                    # 分块暂存，避免把无关改动混进一个提交
+git commit
+git push -u origin feature-recommend-eval
+```
+
+> 当前远程的 `dev`、`feature-c`、`feature-f`、`feature-z` 都还停在同一个
+> `Initial commit` 上，需要按上面的流程真正推进起来。
+
+## 2. 提交信息
+
+采用 [Conventional Commits](https://www.conventionalcommits.org/)，标题行中文，
+不加句号，50 字以内；正文用 `-` 列出「为什么改」和「改了什么」。
+
+```text
+<type>(<scope>): <简述>
+
+- 动机或影响
+- 实现要点
+```
+
+允许的 `type`：
+
+| type | 用于 |
+| --- | --- |
+| `feat` | 新功能 |
+| `fix` | 修 bug（正文写清触发条件与影响范围） |
+| `refactor` | 不改变行为的结构调整 |
+| `perf` | 性能优化 |
+| `test` | 只增删测试 |
+| `docs` | 文档与注释 |
+| `style` | 格式化、import 顺序等 |
+| `chore` | 工具链、依赖、配置 |
+| `ci` | CI / 构建流水线 |
+
+示例：
+
+```text
+fix(clean): 修复空列表单元格被解析成字面量标签的问题
+
+- ast.literal_eval 对 "[]" 返回空列表，旧逻辑误判为解析失败
+- 影响 games.csv 中 8,757 行 Tags 与 9,274 行 Genres
+```
+
+## 3. 提交前检查
+
+```bash
+npm run check
+```
+
+等价于依次执行：
+
+| 步骤 | 命令 | 覆盖范围 |
+| --- | --- | --- |
+| 1 | `npm run typecheck` | TypeScript 类型 |
+| 2 | `npm run lint:py` | ruff（`recommender/`、`tests/python/`） |
+| 3 | `npm test` | 前端纯函数单测 |
+| 4 | `npm run test:py` | Python 单测 + API 契约测试 |
+
+只改了前端就跑前 3 步，只改了 Python 就跑第 2、4 步。CI 会把这三组都跑一遍。
+
+首次准备环境：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1
+```
+
+## 4. 绝对不要提交
+
+以下内容已在 `.gitignore` 中排除，**不要用 `git add -f` 绕过**：
+
+| 路径 | 原因 |
+| --- | --- |
+| `games.csv` | 395 MiB，超过 Git 单文件上限；通过 Release 或本地放置分发 |
+| `recommender/data/` | Qdrant 向量库、BGE-M3 权重、嵌入缓存，均可重新生成 |
+| `.env` / `.env.local` | **含真实 API Key**；只提交 `.env.example` |
+| `node_modules/`、`.next/`、`.venv/` | 构建与依赖产物 |
+
+提交前自查：
+
+```bash
+git status --short          # 确认没有意外的大文件
+git diff --cached --stat    # 确认改动量合理（几十 KB，不是几百 MB）
+```
+
+如果误把密钥提交进历史，仅删除文件不够——需要从历史中清除并**立即轮换该 Key**。
+
+## 5. 关于本地 Qdrant
+
+本地嵌入式 Qdrant 是**单进程独占**的：同一时间只能有一个进程持有
+`recommender/data/qdrant`。因此：
+
+- 跑 `npm run recommend:enrich` 之前必须先停掉 `npm run recommend:api`；
+- 两个人共用同一份 `recommender/data/` 无法并行调推荐服务；
+- 需要并行时改用远程 Qdrant：设置 `QDRANT_URL` 与 `QDRANT_API_KEY`。
+
+## 6. 代码放置规则
+
+新增代码前先看 [docs/project-structure.md](docs/project-structure.md) 第 3 节。
+最关键的一条：`recommender/` 下的 `text.py`、`ranking.py`、`clean.py`、
+`dataset_stats.py` **只能依赖标准库**，否则零依赖单测会失效。

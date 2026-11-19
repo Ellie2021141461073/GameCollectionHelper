@@ -13,6 +13,7 @@ from qdrant_client.models import PointStruct
 from .chat import create_json_completion, deepseek_configured, get_deepseek_config
 from .clean import CleanGame, iter_games
 from .embeddings import embed_documents, embedding_info
+from .selection import select_new_app_ids
 from .store import (
     COLLECTION_NAME,
     PROJECT_ROOT,
@@ -45,6 +46,16 @@ def parse_args() -> argparse.Namespace:
         "--reset",
         action="store_true",
         help="Delete the existing Qdrant collection",
+    )
+    parser.add_argument(
+        "--order-by",
+        choices=["file", "reviews"],
+        default="file",
+        help=(
+            "Which candidates to enrich: 'file' keeps games.csv order (median "
+            "~100 reviews), 'reviews' prefers the most-reviewed games so famous "
+            "titles make it into the index"
+        ),
     )
     return parser.parse_args()
 
@@ -141,6 +152,22 @@ def main() -> int:
     processed = 0
     batch: list[CleanGame] = []
     batch_size = max(1, args.batch_size)
+
+    # games.csv order is arbitrary, so "the first N rows" gives an index whose
+    # median game has ~100 reviews and which misses well-known titles entirely.
+    # --order-by reviews restricts the run to the most-reviewed candidates.
+    wanted: set[int] | None = None
+    if args.order_by == "reviews":
+        wanted = set(select_new_app_ids(
+            args.data,
+            limit=args.limit,
+            min_reviews=args.min_reviews,
+            include_demos=args.include_demos,
+            known_ids=known_ids,
+            order="reviews",
+        ))
+        print(f"[SELECT] {len(wanted):,} candidates ranked by review count", flush=True)
+
     for game in iter_games(
         args.data,
         min_reviews=args.min_reviews,
@@ -149,6 +176,8 @@ def main() -> int:
         if processed >= args.limit:
             break
         if game.app_id in known_ids:
+            continue
+        if wanted is not None and game.app_id not in wanted:
             continue
         batch.append(game)
         target_size = min(batch_size, max(1, args.limit - processed))

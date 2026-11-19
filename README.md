@@ -115,16 +115,45 @@ lib/
   csvCatalog.ts            games.csv 流式解析与缓存索引
   steam.ts                 Steam Store / Community Market 服务端适配层
   types.ts                 数据模型
-recommender/               BGE-M3、Qdrant、BM25 与 DeepSeek 服务
+recommender/
+  text.py                  分词与停用词（仅标准库）
+  ranking.py               BM25、质量先验与 RRF 融合（仅标准库）
+  clean.py                 games.csv 清洗与 39/40 列错位修复
+  dataset_stats.py         数据集统计
+  store.py / embeddings.py / chat.py   Qdrant、BGE-M3、DeepSeek 适配
+  service.py               FastAPI 路由层
+tests/
+  math.test.mjs            前端纯函数单测
+  python/                  Python 单测与 API 契约测试
+scripts/bootstrap.ps1      一键环境初始化
 ```
 
-## 测试
+分层规则、依赖方向与「新代码放哪里」的对照表见
+[docs/project-structure.md](docs/project-structure.md)。
+
+## 开发与测试
+
+首次准备环境（建 `.venv`、装依赖、跑冒烟测试）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1
+```
+
+日常检查：
 
 ```bash
-npm run typecheck
-npm run build
-npm test
+npm run check        # typecheck + ruff + 前端单测 + Python 单测
+npm run typecheck    # 仅 TypeScript 类型检查
+npm test             # 仅前端单测（tests/*.test.mjs）
+npm run test:py      # 仅 Python 单测（tests/python）
+npm run lint:py      # 仅 ruff
+npm run data:stats   # 打印 games.csv 规模统计
+npm run build        # 生产构建
 ```
+
+`recommender/` 的 `text.py`、`ranking.py`、`clean.py`、`dataset_stats.py` 只依赖标准库，
+不安装 torch 也能跑测试；API 契约测试在缺少 fastapi 时会自动跳过。
+脚本执行前请先激活虚拟环境：`.\.venv\Scripts\Activate.ps1`。
 
 ## 项目归属说明
 

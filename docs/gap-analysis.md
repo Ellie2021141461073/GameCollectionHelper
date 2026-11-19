@@ -439,9 +439,9 @@ DEEPSEEK_MODEL=CS5351/DeepSeek-V4-Flash
 
 | 查询 | 召回的前三 |
 | --- | --- |
-| Stardew Valley | STORY OF SEASONS: Friends of Mineral Town / Fields of Mistria / Coral Island |
+| Stardew Valley | STORY OF SEASONS: Friends of Mineral Town / Coral Island / Fields of Mistria |
 | Cyberpunk 2077 | RoboCop: Rogue City / Deus Ex: GOTY / The Ascent |
-| ELDEN RING | ELDEN RING NIGHTREIGN / YAR: Forgotten Throne / Lords of the Fallen |
+| ELDEN RING | ELDEN RING NIGHTREIGN / Lords of the Fallen / Risen |
 | Black Myth: Wukong | Black Myth: Wukong Benchmark Tool / The Crown of Wu / Monkey King Simulator |
 | The Witcher 3 | Requiem / The Witcher: Enhanced Edition / Vampire: The Masquerade - Redemption |
 
@@ -455,18 +455,44 @@ DEEPSEEK_MODEL=CS5351/DeepSeek-V4-Flash
 
 ### 10.4 第 2 批：+4,890 条（至 30,000）
 
-按 36.5 条/分钟估算约 **134 分钟**、约 **3.5 M tokens**。
+| 指标 | 实测 |
+| --- | --- |
+| 规模 | 25,110 → **30,000**（+4,890，0 失败） |
+| 耗时 | **7,849 s = 2 h 11 m** |
+| 速率 | **37.4 条/分钟**（1.61 s/条） |
+| prompt tokens | **2,681,207**（548/条） |
+| completion tokens | **633,587**（130/条） |
+| 429 限流 | **0** |
 
-### 10.5 规模上限的现实约束
+两批合计：**+9,890 条 / 4 h 28 m / 9,890 次 LLM 调用 /
+5,645,749 prompt + 1,283,556 completion = 6.93 M tokens**，零失败。
 
-瓶颈是网关速率而不是 token 预算：
+### 10.5 30,000 条最终状态（实测）
+
+| 指标 | 值 |
+| --- | --- |
+| Qdrant 点数 | **30,000**（size 1024, Cosine） |
+| 容器冷启动 `/status` | **64 s**（拉 3 万条 payload + 建 BM25） |
+| `/search` 冷查询 p50 | **2.14 s**（含 CPU 嵌入 + LLM 解释） |
+| `/search` 重复查询 p50 | **0.30 s**（检索本身） |
+| `/similar` p50 | **2.37 s** |
+| 推荐容器内存 | **3.29 GiB / 7.41 GiB**（44%） |
+| Qdrant 卷体积 | **527 MB** |
+| 验收 | **27/27 通过** |
+
+内存随规模线性增长，实测每 +1 万条约 +0.74 GiB，据此推算 46,018 条约
+**4.5 GiB**，仍在 7.41 GiB 虚拟机上限内——之前 §10.5 的 5.9 GiB 估计偏保守。
+
+### 10.6 规模上限的现实约束
+
+瓶颈是网关速率而不是 token 预算，也不是内存：
 
 | 规模 | 预计耗时 |
 | --- | --- |
 | 25,000（第 1 批后） | — |
-| 30,000（当前目标） | +2.2 h |
-| 46,018（全部达标池） | 约 9.5 h，且推荐容器内存预计 ~5.9 GB / 虚拟机 7.4 GB，偏紧 |
+| 30,000（已完成） | — |
+| 46,018（全部达标池） | 约 7.3 h（剩 16,018 条） |
 
-若后续要扩到 46k，应先给 Docker 虚拟机加内存（或改回嵌入式 + 单进程），
-并向课程方申请提高 `team_member` 的请求配额。
+若要继续扩到 46k，只需分批跑（每批约 2 小时可中断）；内存不是障碍。
+真正的天花板是 `team_member` 的 **50 请求/分钟**，想提速只能向课程方申请配额。
 

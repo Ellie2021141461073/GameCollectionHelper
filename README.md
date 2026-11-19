@@ -65,6 +65,21 @@ GCP 部署与排错步骤见
 主页的「智能推荐」入口会进入该页面。推荐 Key 只保存在服务端 `.env.local`，
 不得使用 `NEXT_PUBLIC_` 前缀或提交到 Git。
 
+## 容器化运行
+
+整套服务可以用 Docker Compose 一键拉起（Qdrant server + FastAPI + Next.js）：
+
+```powershell
+docker compose up -d qdrant                    # 向量库
+python -m recommender.migrate_qdrant           # 把本地 2 万条向量搬进 server（只需一次）
+docker compose up -d --build recommender web   # 应用
+```
+
+打开 <http://localhost:3000>，API 在 <http://127.0.0.1:8000/status>。
+容器模式下 Qdrant 改为 server 模式（不再有单进程锁限制），嵌入改在 CPU 上跑，
+`games.csv` 与 BGE-M3 权重通过只读挂载复用宿主机文件。完整说明、镜像体积、
+资源占用与已知限制见 [docs/docker.md](docs/docker.md)。
+
 ## 卡牌价值估算（辅助功能）
 
 针对 Steam **普通卡牌**（排除闪卡）：

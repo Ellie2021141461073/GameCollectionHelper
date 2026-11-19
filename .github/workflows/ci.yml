@@ -82,3 +82,16 @@ jobs:
         env:
           DEEPSEEK_API_KEY: ''
         run: python -c "import recommender.service as s; print(len(s.app.routes), 'routes')"
+
+  compose:
+    name: docker compose config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Docker and the compose plugin are preinstalled on the hosted runner.
+      # This only validates the file: no image is built and .env.local is absent
+      # on purpose, which exercises the `required: false` env_file entry.
+      - name: Validate the compose file
+        run: docker compose config --quiet
+

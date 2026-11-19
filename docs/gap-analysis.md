@@ -325,8 +325,9 @@ DEEPSEEK_MODEL=CS5351/DeepSeek-V4-Flash
 | 质量 | ruff（E/F/W/I/B/UP/C4/SIM/RET/PTH，行宽 100）全绿；`zip(strict=)`、`Path.open` 等统一 |
 | 工具链 | `pyproject.toml`、`.editorconfig`、`.gitattributes`、`requirements-dev.txt` |
 | 脚本 | `scripts/bootstrap.ps1`（优先用 uv，支持 `-Full` 装重型运行栈） |
+| 容器化 | `docker-compose.yml` + `docker/*.Dockerfile` + `recommender/migrate_qdrant.py`，已实跑验证（见 §9） |
 | CI | `.github/workflows/ci.yml`：web / python-unit（零依赖）/ python-api 三个 job |
-| 文档 | `docs/project-structure.md`、`CONTRIBUTING.md`、README 开发章节 |
+| 文档 | `docs/project-structure.md`、`docs/docker.md`、`CONTRIBUTING.md`、README 开发章节 |
 | 一句话检查 | `npm run check`（typecheck + ruff + 前端单测 + Python 单测） |
 
 ### 7.4 仍然待办
@@ -336,7 +337,6 @@ DEEPSEEK_MODEL=CS5351/DeepSeek-V4-Flash
 | 重建索引 | 现索引缺少热门游戏（见 §8.1），需 `--order-by reviews --reset` 重跑，成本约 3 万次 LLM 调用 |
 | 评测集与 `evaluate.py` | Recall@k / NDCG 与 BM25/向量/RRF 消融；属报告素材，本轮按要求跳过 |
 | Release 上传 `games.csv` | README 第 21 行的下载链接目前是死链 |
-| Docker / Qdrant server 模式 | 本机没有 Docker，未验证，故未提交 compose 文件 |
 | LICENSE | 属法务决策，未擅自添加 |
 
 ---
@@ -367,4 +367,50 @@ DEEPSEEK_MODEL=CS5351/DeepSeek-V4-Flash
 - 现象：`OSError: I/O error ... (os error 5)`，发生在 `huggingface_hub` 的 Xet 下载路径。
 - 绕法：`$env:HF_HUB_DISABLE_XET = "1"` 后重试，实测 1280 MB / 20 s 下载成功。
 - 已写入 `recommender/README.md` 的「首次下载 BGE-M3 失败」小节。
+
+---
+
+## 9. 容器化（本轮完成并实跑验证）
+
+此前因本机无 Docker 而搁置的容器化已完成。Docker Desktop 4.99.0 装好后，
+`docker compose up` 全栈实测通过。
+
+### 9.1 组成
+
+| 服务 | 镜像 | 体积 | 说明 |
+| --- | --- | --- | --- |
+| `qdrant` | `qdrant/qdrant:v1.20.2` | 287 MB | server 模式，命名卷持久化 |
+| `recommender` | 自建（python:3.12-slim + CPU torch） | 1.95 GB | `QDRANT_URL` 指向 qdrant，模型权重为宿主挂载 |
+| `web` | 自建（node:22-slim 三阶段） | 850 MB | `games.csv` 只读挂载，`RECOMMENDER_API_URL` 指向 recommender |
+
+### 9.2 迁移：嵌入式 → server
+
+嵌入式模式把全部数据放在单个 `storage.sqlite`，server 读不了，因此新增
+`recommender/migrate_qdrant.py`：按 256 条一批把 id / vector / payload 原样重传，
+**不重新嵌入、不调用 LLM**。
+
+实测：**20,000 点在 24.7 s 内完成（811 点/s）**，源与目标计数一致。
+
+### 9.3 端到端实测（容器内）
+
+| 检查 | 结果 |
+| --- | --- |
+| 三容器健康状态 | `qdrant` / `recommender` / `web` 全部 `healthy` |
+| `GET /status` | 200，`documents=20000`、`vector_size=1024`、`device=cpu` `float32` |
+| `GET /similar?q=496350` | 200，6.3 s，返回 NEKOPARA Vol.4 / Yukikoi Melt 等 |
+| `GET /search?q=a relaxing puzzle…` | 200，首次 51.1 s（含 CPU 加载模型），结果与宿主一致 |
+| 温态 `/search` | 3.02 s / 2.13 s |
+| web → api 代理 | 200，0.23 s |
+| `GET /api/deals` | 200，13.3 s，`totalItems=9516`（11,049 款可筛选），证明 395 MB CSV 挂载生效 |
+
+### 9.4 容器模式带来的改进与代价
+
+- **改进**：Qdrant 从嵌入式单进程锁改为 server 模式，增强脚本与 API 可以同时运行，
+  多人共用一份数据也不必串行（详见 `CONTRIBUTING.md` §5）。
+- **代价**：容器内没有 GPU 直通，嵌入退到 CPU；但实测温态延迟 2.1–3.0 s，
+  与宿主 CUDA 的 p50 2.45 s 基本持平，瓶颈在 LLM 解释而非嵌入。
+- **冷启动**：容器内首次 `/status` 需 74 s（2 万条 payload 走 HTTP + 建 BM25），
+  比宿主的 27 s 慢，属冷启动成本。
+
+完整操作说明见 [docs/docker.md](docker.md)。
 

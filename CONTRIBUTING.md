@@ -117,10 +117,14 @@ git diff --cached --stat    # 确认改动量合理（几十 KB，不是几百 M
 
 - 跑 `npm run recommend:enrich` 之前必须先停掉 `npm run recommend:api`；
 - 两个人共用同一份 `recommender/data/` 无法并行调推荐服务；
-- 需要并行时改用远程 Qdrant：设置 `QDRANT_URL` 与 `QDRANT_API_KEY`。
+- 需要并行时，最省事的做法是改用 server 模式：
+  `docker compose up -d qdrant` + `python -m recommender.migrate_qdrant`，
+  之后设 `QDRANT_URL=http://127.0.0.1:6333` 即可（见 [docs/docker.md](docs/docker.md)）；
+  也可以连远程 Qdrant：设置 `QDRANT_URL` 与 `QDRANT_API_KEY`。
 
 ## 6. 代码放置规则
 
 新增代码前先看 [docs/project-structure.md](docs/project-structure.md) 第 3 节。
 最关键的一条：`recommender/` 下的 `text.py`、`ranking.py`、`clean.py`、
-`dataset_stats.py` **只能依赖标准库**，否则零依赖单测会失效。
+`selection.py`、`dataset_stats.py` **只能依赖标准库**，否则零依赖单测会失效。
+容器编排（`docker/`、`docker-compose.yml`）属基础设施，不参与 Python 包依赖图。

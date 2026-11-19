@@ -43,6 +43,7 @@ GameCollectionHelper/                  Git 仓库根（= WORKPLACE/）
 │   ├── embeddings.py                  ③ BGE-M3 向量（懒加载 sentence-transformers）
 │   ├── chat.py                        ③ DeepSeek / OpenAI 兼容客户端
 │   ├── enrich_qdrant.py               离线增强流水线（LLM 标签 + 摘要 + 向量入库）
+│   ├── migrate_qdrant.py              把嵌入式库搬到 Qdrant server（③，一次性运维）
 │   ├── service.py                     ④ FastAPI 路由层
 │   ├── smoke_test.py                  需要完整运行栈的端到端冒烟脚本
 │   └── requirements.txt               运行期依赖
@@ -54,8 +55,14 @@ GameCollectionHelper/                  Git 仓库根（= WORKPLACE/）
 │       └── test_service_api.py        FastAPI 契约测试（无 fastapi 时自动 skip）
 ├── scripts/
 │   └── bootstrap.ps1                  一键环境初始化
+├── docker/
+│   ├── recommender.Dockerfile         Python 3.12 + CPU torch + FastAPI
+│   └── web.Dockerfile                 Next.js 三阶段构建
+├── docker-compose.yml                 qdrant + recommender + web 编排
+├── .dockerignore                      构建上下文排除（数据、密钥、缓存）
 ├── docs/
 │   ├── gap-analysis.md                当前缺口与补齐清单
+│   ├── docker.md                      容器化运行说明
 │   └── project-structure.md           本文件
 ├── .github/workflows/ci.yml           CI：web / python-unit / python-api
 ├── pyproject.toml                     ruff 与 coverage 配置
@@ -84,6 +91,7 @@ app/api/recommender ──HTTP──► recommender/service.py
 
 service.py ──► ranking.py, text.py, clean.py, store.py, embeddings.py, chat.py
 enrich_qdrant.py ──► clean.py, selection.py, store.py, embeddings.py, chat.py
+migrate_qdrant.py ──► store.py（仅读常量）
 
 ranking.py / text.py / clean.py / selection.py / dataset_stats.py
     ↑ 只允许标准库，禁止 import qdrant_client / openai / fastapi / torch

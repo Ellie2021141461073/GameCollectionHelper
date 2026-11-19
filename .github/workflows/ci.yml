@@ -1,8 +1,9 @@
 name: CI
 
 on:
+  # Every branch push: feature branches need feedback before a PR is opened.
+  # (Was restricted to main/dev, which silently skipped CI on feature-* pushes.)
   push:
-    branches: [main, dev]
   pull_request:
   workflow_dispatch:
 

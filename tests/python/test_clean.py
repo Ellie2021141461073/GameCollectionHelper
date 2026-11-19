@@ -8,6 +8,7 @@ Run with:  python -m unittest discover -s tests/python
 
 from __future__ import annotations
 
+import csv
 import tempfile
 import unittest
 from datetime import date
@@ -74,7 +75,8 @@ class ColumnAlignmentTest(unittest.TestCase):
     def test_naive_header_zip_reads_the_wrong_column(self) -> None:
         """Documents the bug: zipping the header shifts every field by one."""
         row = build_row()
-        naive = dict(zip(BROKEN_HEADER, row))
+        # strict=False on purpose: the whole point is that the lengths differ.
+        naive = dict(zip(BROKEN_HEADER, row, strict=False))
         self.assertEqual(naive["About the game"], "0")  # actually the DLC count
         self.assertEqual(naive["Supported languages"], "You inherited a farm.")
 
@@ -162,11 +164,9 @@ class FilteringTest(unittest.TestCase):
 
 class IterGamesTest(unittest.TestCase):
     def test_skips_duplicates_and_honours_limit(self) -> None:
-        import csv
-
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "games.csv"
-            with open(path, "w", encoding="utf-8-sig", newline="") as handle:
+            with path.open("w", encoding="utf-8-sig", newline="") as handle:
                 writer = csv.writer(handle)
                 writer.writerow(BROKEN_HEADER)
                 writer.writerow(build_row())

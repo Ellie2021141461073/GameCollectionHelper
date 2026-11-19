@@ -17,7 +17,6 @@ from .ranking import BM25Index, merge_rankings
 from .store import COLLECTION_NAME, PROJECT_ROOT, all_points, get_client
 from .text import tokenize
 
-
 load_dotenv(PROJECT_ROOT / ".env.local")
 load_dotenv(PROJECT_ROOT / ".env")
 
@@ -136,7 +135,11 @@ def find_source(state: SearchState, query: str) -> Document:
 def fallback_reason(source: dict[str, Any], result: dict[str, Any]) -> str:
     source_tags = {
         str(tag).casefold()
-        for tag in (source.get("llm_tags") or []) + (source.get("genres") or []) + (source.get("source_tags") or [])
+        for tag in (
+            (source.get("llm_tags") or [])
+            + (source.get("genres") or [])
+            + (source.get("source_tags") or [])
+        )
     }
     result_tags = list(result.get("llm_tags") or []) + list(result.get("genres") or [])
     shared = [tag for tag in result_tags if str(tag).casefold() in source_tags]
@@ -194,7 +197,10 @@ def explain_results(
             for item in data.get("items", [])
             if item.get("app_id") is not None and item.get("reason")
         }
-        resolved = {item["app_id"]: reasons.get(item["app_id"], fallback[item["app_id"]]) for item in results}
+        resolved = {
+            item["app_id"]: reasons.get(item["app_id"], fallback[item["app_id"]])
+            for item in results
+        }
         _explanation_cache[cache_key] = resolved
         return resolved
     except Exception:
@@ -202,7 +208,11 @@ def explain_results(
         return fallback
 
 
-def response_items(source: dict[str, Any], ranked: list[dict[str, Any]], query_text: str | None = None):
+def response_items(
+    source: dict[str, Any],
+    ranked: list[dict[str, Any]],
+    query_text: str | None = None,
+) -> list[dict[str, Any]]:
     explanations = explain_results(source, ranked, query_text)
     return [
         {

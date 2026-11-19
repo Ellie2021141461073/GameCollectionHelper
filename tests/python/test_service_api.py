@@ -25,7 +25,7 @@ os.environ["RECOMMENDER_CHAT_API_KEY"] = ""
 try:
     from fastapi.testclient import TestClient
 except ImportError:  # pragma: no cover - exercised only in the stdlib-only job
-    raise unittest.SkipTest("fastapi/httpx not installed")
+    raise unittest.SkipTest("fastapi/httpx not installed") from None
 
 from recommender.ranking import BM25Index
 from recommender.service import Document, SearchState, app

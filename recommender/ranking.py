@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from typing import Any, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
 
 #: Reciprocal rank fusion damping constant (Cormack et al., 2009).
 RRF_K = 60

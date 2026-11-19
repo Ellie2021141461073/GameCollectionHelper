@@ -12,9 +12,9 @@ import math
 import unittest
 
 from recommender.ranking import (
-    BM25Index,
     QUALITY_WEIGHT,
     RRF_K,
+    BM25Index,
     merge_rankings,
     quality_score,
 )

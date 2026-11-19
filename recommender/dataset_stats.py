@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def count_raw_rows(path: Path) -> int:
-    with open(path, "r", encoding="utf-8-sig", newline="") as handle:
+    with path.open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.reader(handle)
         next(reader, None)
         return sum(1 for _ in reader)

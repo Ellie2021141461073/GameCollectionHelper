@@ -8,7 +8,6 @@ from openai import OpenAI
 
 from .store import PROJECT_ROOT
 
-
 load_dotenv(PROJECT_ROOT / ".env.local")
 load_dotenv(PROJECT_ROOT / ".env")
 

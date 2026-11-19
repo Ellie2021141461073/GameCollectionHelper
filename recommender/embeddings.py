@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import os
 import threading
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from dotenv import load_dotenv
 
 from .store import PROJECT_ROOT
-
 
 load_dotenv(PROJECT_ROOT / ".env.local")
 load_dotenv(PROJECT_ROOT / ".env")

@@ -22,7 +22,6 @@ from .store import (
     get_client,
 )
 
-
 PROMPT = """You enrich Steam game catalogue records for a recommendation engine.
 Use only the supplied metadata. Return strict JSON:
 {
@@ -33,14 +32,20 @@ Do not mention review scores or marketing language. Do not invent mechanics."""
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="LLM-enrich games.csv into a local Qdrant collection")
+    parser = argparse.ArgumentParser(
+        description="LLM-enrich games.csv into a local Qdrant collection"
+    )
     parser.add_argument("--data", type=Path, default=PROJECT_ROOT / "games.csv")
     parser.add_argument("--limit", type=int, default=100, help="Maximum new games for this run")
     parser.add_argument("--min-reviews", type=int, default=20)
     parser.add_argument("--include-demos", action="store_true")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--reset", action="store_true", help="Delete the existing Qdrant collection")
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Delete the existing Qdrant collection",
+    )
     return parser.parse_args()
 
 
@@ -100,7 +105,7 @@ def process_batch(
     ]
     vectors = embed_documents(embedding_inputs)
     points = []
-    for game, vector in zip(batch, vectors):
+    for game, vector in zip(batch, vectors, strict=True):
         tags, summary = enriched[game.app_id]
         search_text = build_embedding_text(game, tags, summary)
         payload = game_payload(game, llm_tags=tags, summary=summary, search_text=search_text)

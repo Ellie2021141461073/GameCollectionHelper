@@ -5,11 +5,10 @@ import csv
 import html
 import re
 import unicodedata
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Iterator
-
 
 # The source CSV has 39 header labels but 40 values per row:
 # "DiscountDLC count" is actually two columns.
@@ -192,7 +191,9 @@ def row_to_game(
 ) -> CleanGame | None:
     if len(values) < len(CSV_COLUMNS):
         values = values + [""] * (len(CSV_COLUMNS) - len(values))
-    row = dict(zip(CSV_COLUMNS, values[:len(CSV_COLUMNS)]))
+    # strict=True documents the invariant this module exists for: values has
+    # been padded to exactly len(CSV_COLUMNS) entries above.
+    row = dict(zip(CSV_COLUMNS, values[:len(CSV_COLUMNS)], strict=True))
     app_id = parse_int(row["AppID"], 0)
     name = clean_text(row["Name"])
     if app_id <= 0 or not name:
@@ -263,7 +264,7 @@ def iter_games(
     exclude_non_games: bool = True,
 ) -> Iterator[CleanGame]:
     seen_app_ids: set[int] = set()
-    with open(path, "r", encoding="utf-8-sig", newline="") as handle:
+    with Path(path).open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.reader(handle)
         next(reader, None)  # Ignore the malformed 39-label source header.
         emitted = 0

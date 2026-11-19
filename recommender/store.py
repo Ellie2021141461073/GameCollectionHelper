@@ -9,7 +9,6 @@ from qdrant_client.models import Distance, VectorParams
 
 from .clean import CleanGame
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / ".env.local")
 load_dotenv(PROJECT_ROOT / ".env")

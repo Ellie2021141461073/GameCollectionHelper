@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import json
-import math
 import os
-import re
-from collections import Counter
 from dataclasses import dataclass
 from difflib import get_close_matches
 from typing import Any
@@ -14,8 +11,11 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from .chat import chat_configured, create_json_completion, get_chat_config
+from .clean import normalize_name
 from .embeddings import embed_query, embedding_info
+from .ranking import BM25Index, merge_rankings
 from .store import COLLECTION_NAME, PROJECT_ROOT, all_points, get_client
+from .text import tokenize
 
 
 load_dotenv(PROJECT_ROOT / ".env.local")
@@ -38,66 +38,12 @@ def close_qdrant() -> None:
         _state.client.close()
         _state = None
 
-STOP_WORDS = {
-    "the", "and", "for", "with", "from", "that", "this", "into", "your", "you",
-    "are", "its", "game", "games", "steam", "about", "will", "can", "all",
-}
-ENGLISH_TOKEN = re.compile(r"[a-z0-9][a-z0-9+#.-]*")
-CHINESE_RUN = re.compile(r"[\u4e00-\u9fff]+")
-
-
-def tokenize(text: str) -> list[str]:
-    lowered = (text or "").casefold()
-    tokens = [token for token in ENGLISH_TOKEN.findall(lowered) if len(token) > 1 and token not in STOP_WORDS]
-    for run in CHINESE_RUN.findall(lowered):
-        if len(run) <= 4:
-            tokens.append(run)
-        tokens.extend(run[index:index + 2] for index in range(max(0, len(run) - 1)))
-    return tokens
-
-
 @dataclass
 class Document:
     app_id: int
     vector: list[float]
     payload: dict[str, Any]
     tokens: list[str]
-
-
-class BM25Index:
-    def __init__(self, documents: list[Document], k1: float = 1.5, b: float = 0.75):
-        self.documents = documents
-        self.k1 = k1
-        self.b = b
-        self.postings: dict[str, list[tuple[int, int]]] = {}
-        lengths = []
-        for index, document in enumerate(documents):
-            counts = Counter(document.tokens)
-            lengths.append(sum(counts.values()))
-            for term, frequency in counts.items():
-                self.postings.setdefault(term, []).append((index, frequency))
-        self.lengths = lengths
-        self.average_length = sum(lengths) / max(1, len(lengths))
-        total = max(1, len(documents))
-        self.idf = {
-            term: math.log(1 + (total - len(entries) + 0.5) / (len(entries) + 0.5))
-            for term, entries in self.postings.items()
-        }
-
-    def search(self, query_tokens: list[str], limit: int) -> list[tuple[int, float]]:
-        scores = [0.0] * len(self.documents)
-        for term in dict.fromkeys(query_tokens):
-            entries = self.postings.get(term)
-            if not entries:
-                continue
-            idf = self.idf[term]
-            for index, frequency in entries:
-                denominator = frequency + self.k1 * (
-                    1 - self.b + self.b * self.lengths[index] / max(1e-9, self.average_length)
-                )
-                scores[index] += idf * frequency * (self.k1 + 1) / denominator
-        ranked = sorted(range(len(scores)), key=lambda index: scores[index], reverse=True)[:limit]
-        return [(index, scores[index]) for index in ranked if scores[index] > 0]
 
 
 @dataclass
@@ -136,7 +82,8 @@ def load_state() -> SearchState:
         ))
     if not documents:
         raise RuntimeError("Qdrant collection contains no enriched vectors.")
-    _state = SearchState(client=client, documents=documents, bm25=BM25Index(documents))
+    bm25 = BM25Index([document.tokens for document in documents])
+    _state = SearchState(client=client, documents=documents, bm25=bm25)
     return _state
 
 
@@ -168,7 +115,7 @@ def find_source(state: SearchState, query: str) -> Document:
         for document in state.documents:
             if document.app_id == app_id:
                 return document
-    normalized = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", value.casefold()).strip()
+    normalized = normalize_name(value)
     exact = [doc for doc in state.documents if doc.payload.get("normalized_name") == normalized]
     if exact:
         return exact[0]
@@ -184,49 +131,6 @@ def find_source(state: SearchState, query: str) -> Document:
         match = matches[0]
         return next(doc for doc in state.documents if doc.payload.get("normalized_name") == match)
     raise HTTPException(status_code=404, detail=f"未找到游戏：{query}")
-
-
-def quality_score(payload: dict[str, Any]) -> float:
-    positive = max(0, int(payload.get("positive") or 0))
-    negative = max(0, int(payload.get("negative") or 0))
-    bayesian = (positive + 40 * 0.8) / (positive + negative + 40)
-    popularity = min(1.0, math.log1p(max(0, int(payload.get("recommendations") or 0))) / 12)
-    return 0.8 * bayesian + 0.2 * popularity
-
-
-def merge_rankings(
-    vector_results: list[tuple[int, float]],
-    bm25_results: list[tuple[int, float]],
-    state: SearchState,
-    limit: int,
-    exclude_id: int | None = None,
-) -> list[dict[str, Any]]:
-    by_id = {document.app_id: document for document in state.documents}
-    merged: dict[int, dict[str, Any]] = {}
-    for rank, (app_id, score) in enumerate(vector_results, 1):
-        if app_id == exclude_id:
-            continue
-        item = merged.setdefault(app_id, {"app_id": app_id, "rrf": 0.0})
-        item["rrf"] += 1 / (60 + rank)
-        item["vector_score"] = score
-    for rank, (index, score) in enumerate(bm25_results, 1):
-        app_id = state.documents[index].app_id
-        if app_id == exclude_id:
-            continue
-        item = merged.setdefault(app_id, {"app_id": app_id, "rrf": 0.0})
-        item["rrf"] += 1 / (60 + rank)
-        item["bm25_score"] = score
-    for item in merged.values():
-        document = by_id.get(item["app_id"])
-        if not document:
-            continue
-        item["payload"] = document.payload
-        item["hybrid_score"] = item["rrf"] + 0.004 * quality_score(document.payload)
-    ranked = sorted(merged.values(), key=lambda item: item.get("hybrid_score", 0), reverse=True)[:limit]
-    maximum = max((item["hybrid_score"] for item in ranked), default=1)
-    for item in ranked:
-        item["match_percent"] = round(item["hybrid_score"] / maximum * 100, 1)
-    return ranked
 
 
 def fallback_reason(source: dict[str, Any], result: dict[str, Any]) -> str:
@@ -350,7 +254,14 @@ def similar(q: str = Query(..., min_length=1), limit: int = Query(8, ge=1, le=20
     )[:100]
     vector_results = qdrant_search(state.client, source.vector, 50)
     lexical_results = state.bm25.search(query_tokens, 50)
-    ranked = merge_rankings(vector_results, lexical_results, state, limit, source.app_id)
+    ranked = merge_rankings(
+        vector_results=vector_results,
+        lexical_results=lexical_results,
+        lexical_ids=[document.app_id for document in state.documents],
+        payloads={document.app_id: document.payload for document in state.documents},
+        limit=limit,
+        exclude_id=source.app_id,
+    )
     return {
         "mode": "similar",
         "source": {
@@ -368,7 +279,13 @@ def search(q: str = Query(..., min_length=1), limit: int = Query(8, ge=1, le=20)
     vector = embed_query(q)
     vector_results = qdrant_search(state.client, vector, 50)
     lexical_results = state.bm25.search(tokenize(q)[:100], 50)
-    ranked = merge_rankings(vector_results, lexical_results, state, limit)
+    ranked = merge_rankings(
+        vector_results=vector_results,
+        lexical_results=lexical_results,
+        lexical_ids=[document.app_id for document in state.documents],
+        payloads={document.app_id: document.payload for document in state.documents},
+        limit=limit,
+    )
     source = {"app_id": None, "name": "智能搜索", "summary": q, "llm_tags": tokenize(q)[:8]}
     return {
         "mode": "search",

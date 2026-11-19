@@ -343,17 +343,16 @@ DEEPSEEK_MODEL=CS5351/DeepSeek-V4-Flash
 
 ## 8. 本轮新发现的三个问题
 
-### 8.1 索引样本代表性差（数据侧，未修数据）
+### 8.1 索引样本代表性差（已修复，见 §10）
 
 - **实测**：20,000 条索引里 `review_count` 中位数 **105**、p99 51,033；
   **Stardew Valley(413150) 与 Cyberpunk 2077(1091500) 不在索引内**，
   而 Dota 2(570)、CS2(730) 恰好在。
 - **原因**：`iter_games` 按 `games.csv` 行序取前 2 万条，等于随机抽样。
-- **已加能力**：`enrich_qdrant --order-by reviews`。实测选出的前 20 名为
-  CS2 / PUBG / Dota 2 / GTA V / Terraria / R6 Siege / Rust / TF2 / Garry's Mod /
-  Black Myth / ELDEN RING / HELLDIVERS 2 / Apex / L4D2 / Wallpaper Engine /
-  **Stardew Valley** / ETS2 / **Cyberpunk 2077** / The Witcher 3。
-- **未做**：重建需要重新调用 LLM 约 3 万次，耗时与额度较大，留待你决定。
+- **修复**：`enrich_qdrant --order-by reviews` 按评论数挑选候选，分两批补齐到
+  30,000 条，详见 §10。
+- **顺带修掉的阻塞项**：4 并发会撞上网关 **50 请求/分钟/成员** 的限流，
+  30% 调用被 429 丢弃。已加 `DEEPSEEK_RPM` 客户端限速，限速后 **零 429**。
 
 ### 8.2 `find_source` 会把游戏名替换成别的游戏（已修复）
 
@@ -413,4 +412,61 @@ DEEPSEEK_MODEL=CS5351/DeepSeek-V4-Flash
   比宿主的 27 s 慢，属冷启动成本。
 
 完整操作说明见 [docs/docker.md](docker.md)。
+
+---
+
+## 10. 索引重建记录（按评论数取样，25,110 → 30,000）
+
+### 10.1 第 1 批：+5,000 条
+
+| 指标 | 实测 |
+| --- | --- |
+| 规模 | 20,110 → **25,110**（+5,000，0 失败） |
+| 耗时 | **8,215 s = 2 h 17 m** |
+| 速率 | **36.5 条/分钟**（1.64 s/条） |
+| LLM 调用 | 5,000 次 |
+| prompt tokens | **2,964,542**（593/条；`--dry-run` 估 534，偏低 11%） |
+| completion tokens | **649,969**（130/条，中文摘要） |
+| 嵌入 | 本地 GPU，不出网、不计费 |
+| 429 限流 | **0**（`DEEPSEEK_RPM=40` 生效后；未限速时约 30% 被丢弃且速率更低） |
+
+取样方式：`--order-by reviews` 从「未入库且评论数 ≥20」的候选里取评论数最高的
+5,000 条，因此补进来的正是此前缺的知名作品。
+
+### 10.2 效果验证
+
+重建前 `q=Stardew Valley` 返回 404；重建后全部命中，且同类召回合理：
+
+| 查询 | 召回的前三 |
+| --- | --- |
+| Stardew Valley | STORY OF SEASONS: Friends of Mineral Town / Fields of Mistria / Coral Island |
+| Cyberpunk 2077 | RoboCop: Rogue City / Deus Ex: GOTY / The Ascent |
+| ELDEN RING | ELDEN RING NIGHTREIGN / YAR: Forgotten Throne / Lords of the Fallen |
+| Black Myth: Wukong | Black Myth: Wukong Benchmark Tool / The Crown of Wu / Monkey King Simulator |
+| The Witcher 3 | Requiem / The Witcher: Enhanced Edition / Vampire: The Masquerade - Redemption |
+
+### 10.3 数据事实：54 条没有描述
+
+- 扩到 25,110 条后，全库扫描发现 **54 条（0.215%）`description` 为空**，
+  这是 `games.csv` 的 `About the game` 单元格本身缺失，不是流水线问题。
+- 其中包含 The Witcher 3 这类热门条目：它们仍有按 name/genres/source_tags
+  生成的 LLM 标签与摘要，删除会损失演示价值，因此保留。
+- 验收测试的 R1 断言随之从「每条都非空」改为「≥98% 非空」，并在脚本注释里写明原因。
+
+### 10.4 第 2 批：+4,890 条（至 30,000）
+
+按 36.5 条/分钟估算约 **134 分钟**、约 **3.5 M tokens**。
+
+### 10.5 规模上限的现实约束
+
+瓶颈是网关速率而不是 token 预算：
+
+| 规模 | 预计耗时 |
+| --- | --- |
+| 25,000（第 1 批后） | — |
+| 30,000（当前目标） | +2.2 h |
+| 46,018（全部达标池） | 约 9.5 h，且推荐容器内存预计 ~5.9 GB / 虚拟机 7.4 GB，偏紧 |
+
+若后续要扩到 46k，应先给 Docker 虚拟机加内存（或改回嵌入式 + 单进程），
+并向课程方申请提高 `team_member` 的请求配额。
 

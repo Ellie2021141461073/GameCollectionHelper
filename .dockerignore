@@ -1,0 +1,40 @@
+# Build context excludes.
+# games.csv (395 MB), the embedded Qdrant store (292 MB) and the BGE-M3 cache
+# (2.2 GB) are runtime data: they are mounted or downloaded, never baked in.
+
+# node / next
+node_modules
+.next
+out
+*.tsbuildinfo
+
+# python
+.venv
+__pycache__
+*.py[cod]
+.ruff_cache
+.pytest_cache
+
+# runtime data
+games.csv
+recommender/data
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# local config and secrets
+.env.local
+.env
+.env.*.local
+
+# tooling
+.git
+.github
+.idea
+.vscode
+docs
+tests
+scripts
+*.log
+.DS_Store
+Thumbs.db

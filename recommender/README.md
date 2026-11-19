@@ -86,6 +86,36 @@ python -m recommender.enrich_qdrant --reset --limit 100 --order-by reviews
 
 BGE-M3 模型保存在 `recommender/data/models/bge-m3`。本地嵌入式 Qdrant 同一时间只允许一个进程占用数据库。运行增强脚本前需要停止推荐服务；如需同时读写，请配置远程 `QDRANT_URL`。
 
+### 成本与限流（跑大批量前必读）
+
+先用 `--dry-run` 估算，它不调用任何 API：
+
+```powershell
+python -m recommender.enrich_qdrant --limit 5000 --order-by reviews --dry-run
+```
+
+输出会给出待增强条数、prompt 字符/估算 token、以及按评论数排名前 5 的游戏，
+用来避免误跑一次几万条的批量。
+
+实跑时最大的约束不是 token，而是**课程网关的请求速率**：LiteLLM 限制约
+**50 请求/分钟/成员**，并把它写在 `x-ratelimit-team_member-*` 响应头里。
+超限的表现很反直觉——**429 也消耗配额**，所以靠重试硬顶只会让有效吞吐更低：
+未限速时实测 26 条/分钟且有 30% 的调用被丢弃；按 `DEEPSEEK_RPM=40` 限速后
+稳定 **36–37 条/分钟、零 429**。
+
+```powershell
+$env:DEEPSEEK_RPM = "40"          # 0 = 不限速（换成自有 provider 时用）
+$env:DEEPSEEK_MAX_RETRIES = "3"   # 偶发限流自动退避
+```
+
+单条成本实测约 **534 prompt tokens**（描述截断到 6000 字符），嵌入在本地 GPU 上
+完成、不出网也不计费。脚本结束时会打印 `[RATE]` 与 `[USAGE]`，直接给出
+条/分钟与真实 token 数，不用再估。
+
+推荐组合：**嵌入跑在宿主 GPU、向量写入容器化 Qdrant**（先 `docker compose up -d qdrant`，
+再设 `QDRANT_URL=http://127.0.0.1:6333` 运行增强）。这样既避开嵌入式单进程锁，
+又不必让 CPU 版容器镜像去做嵌入。
+
 ### 首次下载 BGE-M3 失败
 
 新版 `huggingface_hub` 默认走 Xet 传输，在部分 Windows 环境会报

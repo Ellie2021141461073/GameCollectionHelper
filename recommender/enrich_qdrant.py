@@ -10,7 +10,12 @@ from pathlib import Path
 
 from qdrant_client.models import PointStruct
 
-from .chat import create_json_completion, deepseek_configured, get_deepseek_config
+from .chat import (
+    create_json_completion,
+    deepseek_configured,
+    get_deepseek_config,
+    usage_snapshot,
+)
 from .clean import CleanGame, iter_games
 from .embeddings import embed_documents, embedding_info
 from .selection import select_new_app_ids
@@ -57,6 +62,11 @@ def parse_args() -> argparse.Namespace:
             "titles make it into the index"
         ),
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report the selection and an estimated token budget, then exit",
+    )
     return parser.parse_args()
 
 
@@ -97,26 +107,114 @@ def build_embedding_text(game: CleanGame, tags: list[str], summary: str) -> str:
     ])
 
 
+def estimate_run(args: argparse.Namespace, known_ids: set[int]) -> None:
+    """Report what this run would cost without calling any API.
+
+    Token counts are intentionally approximate: the point is to catch an
+    accidental 30k-item run before it burns the quota, not to be exact.
+    """
+    selected = select_new_app_ids(
+        args.data,
+        limit=args.limit,
+        min_reviews=args.min_reviews,
+        include_demos=args.include_demos,
+        known_ids=known_ids,
+        order=args.order_by,
+    )
+    wanted = set(selected)
+    prompt_chars = 0
+    embedding_chars = 0
+    ranked: list[tuple[int, str]] = []
+    games = 0
+    for game in iter_games(
+        args.data,
+        min_reviews=args.min_reviews,
+        exclude_non_games=not args.include_demos,
+    ):
+        if game.app_id not in wanted:
+            continue
+        games += 1
+        metadata = {
+            "name": game.name,
+            "genres": game.genres,
+            "source_tags": game.source_tags,
+            "developers": game.developers,
+            "publishers": game.publishers,
+            "description": game.description[:6000],
+        }
+        prompt_chars += len(json.dumps(metadata, ensure_ascii=False))
+        # Mirrors build_embedding_text(); the summary does not exist yet, so it
+        # is left out and the estimate is slightly conservative.
+        embedding_chars += len(game.name) + len(game.description[:4000])
+        embedding_chars += len(", ".join(game.genres)) + len(", ".join(game.source_tags))
+        ranked.append((game.review_count, game.name))
+        if games == len(wanted):
+            break
+    ranked.sort(reverse=True)
+
+    # ~4 chars per token for English prose; the Chinese summaries lower it, so
+    # treat the prompt figure as an upper bound.
+    input_tokens = prompt_chars // 4
+    embedding_tokens = embedding_chars // 4
+    print(f"[DRY-RUN] order={args.order_by} limit={args.limit:,} 可新增={len(selected):,}")
+    print(f"[DRY-RUN] 本次将增强 {games:,} 款游戏")
+    print(f"[DRY-RUN] LLM 调用 {games:,} 次")
+    print(f"[DRY-RUN] prompt 约 {prompt_chars:,} 字符 ≈ {input_tokens:,} tokens")
+    print(
+        f"[DRY-RUN] 本地嵌入文本约 {embedding_chars:,} 字符 "
+        f"≈ {embedding_tokens:,} tokens（不出网、不计费）"
+    )
+    print("[DRY-RUN] 按评论数排名的前 5 款：")
+    for review_count, name in ranked[:5]:
+        print(f"[DRY-RUN]   - {name} ({review_count:,} reviews)")
+    print("[DRY-RUN] 未调用任何 API，未写入 Qdrant。")
+
+
 def process_batch(
     *,
     qdrant,
     batch: list[CleanGame],
     workers: int,
-) -> int:
+) -> list[int]:
+    """Enrich one batch; returns the AppIDs actually written.
+
+    A single malformed or rate-limited LLM response must not abort a long run:
+    those items are reported and left for the next run, which skips only ids
+    that are really in the collection.
+    """
     enriched: dict[int, tuple[list[str], str]] = {}
+    failed: list[int] = []
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         futures = {pool.submit(enrich_one, game): game for game in batch}
         for future in as_completed(futures):
             game = futures[future]
-            enriched[game.app_id] = future.result()
+            try:
+                enriched[game.app_id] = future.result()
+            except Exception as error:  # noqa: BLE001 - report and continue
+                failed.append(game.app_id)
+                print(
+                    f"[WARN] enrich failed for {game.app_id} ({game.name[:40]}): "
+                    f"{str(error)[:120]}",
+                    flush=True,
+                )
+
+    ready = [game for game in batch if game.app_id in enriched]
+    if not ready:
+        return []
+    if failed:
+        print(
+            f"[WARN] {len(failed)}/{len(batch)} items skipped in this batch, "
+            "rerun to pick them up",
+            flush=True,
+        )
 
     embedding_inputs = [
         build_embedding_text(game, *enriched[game.app_id])
-        for game in batch
+        for game in ready
     ]
     vectors = embed_documents(embedding_inputs)
     points = []
-    for game, vector in zip(batch, vectors, strict=True):
+    for game, vector in zip(ready, vectors, strict=True):
         tags, summary = enriched[game.app_id]
         search_text = build_embedding_text(game, tags, summary)
         payload = game_payload(game, llm_tags=tags, summary=summary, search_text=search_text)
@@ -126,7 +224,7 @@ def process_batch(
         points.append(PointStruct(id=game.app_id, vector=vector, payload=payload))
 
     qdrant.upsert(collection_name=COLLECTION_NAME, points=points, wait=True)
-    return len(points)
+    return [point.id for point in points]
 
 
 def main() -> int:
@@ -139,14 +237,25 @@ def main() -> int:
     chat_config = get_deepseek_config()
     embed_info = embedding_info()
     qdrant = get_client()
-    ensure_collection(qdrant, reset=args.reset)
-    known_ids = set() if args.reset else existing_ids(qdrant)
+    if not args.dry_run:
+        ensure_collection(qdrant, reset=args.reset)
+    if args.reset or not qdrant.collection_exists(COLLECTION_NAME):
+        known_ids: set[int] = set()
+    else:
+        known_ids = existing_ids(qdrant)
     print(f"[QDRANT] collection={COLLECTION_NAME} existing={len(known_ids):,}", flush=True)
     print(
         f"[MODELS] chat={chat_config.provider}/{chat_config.model} "
         f"embedding={embed_info['model']} ({embed_info['dimension']}d)",
         flush=True,
     )
+
+    if args.dry_run:
+        try:
+            estimate_run(args, known_ids)
+        finally:
+            qdrant.close()
+        return 0
 
     started = time.time()
     processed = 0
@@ -183,12 +292,13 @@ def main() -> int:
         target_size = min(batch_size, max(1, args.limit - processed))
         if len(batch) < target_size:
             continue
-        processed += process_batch(
+        written = process_batch(
             qdrant=qdrant,
             batch=batch,
             workers=args.workers,
         )
-        known_ids.update(game.app_id for game in batch)
+        processed += len(written)
+        known_ids.update(written)
         batch.clear()
         print(f"[ENRICH] {processed:,}/{args.limit:,}", flush=True)
         if processed >= args.limit:
@@ -196,14 +306,30 @@ def main() -> int:
 
     if batch and processed < args.limit:
         remaining = batch[:max(0, args.limit - processed)]
-        processed += process_batch(
+        written = process_batch(
             qdrant=qdrant,
             batch=remaining,
             workers=args.workers,
         )
+        processed += len(written)
+        known_ids.update(written)
 
     qdrant.close()
-    print(f"[DONE] added {processed:,} games in {time.time() - started:.1f}s", flush=True)
+    elapsed = time.time() - started
+    usage = usage_snapshot()
+    print(f"[DONE] added {processed:,} games in {elapsed:.1f}s", flush=True)
+    if processed:
+        print(
+            f"[RATE] {processed / elapsed * 60:.1f} games/min "
+            f"({elapsed / processed:.2f}s per game)",
+            flush=True,
+        )
+    print(
+        f"[USAGE] llm_calls={usage['calls']:,} "
+        f"prompt_tokens={usage['prompt_tokens']:,} "
+        f"completion_tokens={usage['completion_tokens']:,}",
+        flush=True,
+    )
     return 0
 
 

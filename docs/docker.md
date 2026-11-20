@@ -44,16 +44,39 @@ host:3000                                                            20,000 条 
 
 ## 3. 首次启动
 
+### 3.1 准备向量数据（二选一）
+
+**方式 A：导入发布页的快照（推荐，约 2 分钟）**
+
+从 Release [data-v1](https://github.com/Ellie2021141461073/GameCollectionHelper/releases/tag/data-v1)
+下载 `steam_games-30000-2026-11-20.snapshot`（247 MB，含 30,000 条向量与摘要），然后：
+
 ```powershell
-# 1) 启动向量库
 docker compose up -d qdrant
 
-# 2) 把现有嵌入式库（2 万条）搬进 server —— 只需一次
-#    先确认没有本地 recommend:api 在跑，嵌入式库是单进程独占
-python -m recommender.migrate_qdrant --target http://127.0.0.1:6333
+curl.exe -X POST "http://127.0.0.1:6333/collections/steam_games/snapshots/upload?priority=snapshot" `
+  -F "snapshot=@steam_games-30000-2026-11-20.snapshot"
+```
 
-# 3) 构建并启动应用（首次构建约 6 分钟，之后走缓存）
-docker compose up -d --build recommender web
+`games.csv`（395 MB）同样从该发布页下载，放到仓库根目录。
+
+**方式 B：自己重建（无需下载，约 4.5 小时）**
+
+```powershell
+docker compose up -d qdrant
+$env:QDRANT_URL = "http://127.0.0.1:6333"
+$env:DEEPSEEK_RPM = "40"
+python -m recommender.enrich_qdrant --limit 30000 --min-reviews 20 --order-by reviews
+```
+
+> 旧版本的文档曾让你用 `python -m recommender.migrate_qdrant` 把「嵌入式库」搬进 server。
+> 那个 2 万条的嵌入式库已删除，`migrate_qdrant` 现在只用于显式指定的 `--source`。
+> 如果你手上还留着别的嵌入式库，仍然可以这样导入。
+
+### 3.2 构建并启动应用
+
+```powershell
+docker compose up -d --build recommender web   # 首次构建约 6 分钟，之后走缓存
 ```
 
 验证：

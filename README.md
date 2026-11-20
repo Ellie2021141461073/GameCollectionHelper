@@ -18,17 +18,43 @@ npm run dev
 
 ### 获取数据文件
 
-源码仓库不提交约 395 MB 的 `games.csv`。请从 GitHub Releases 下载后放到项目根目录：
+约 395 MB 的 `games.csv` 和一些可重新生成的运行数据不进入源码仓库。
+全部从发布页 **[data-v1](https://github.com/Ellie2021141461073/GameCollectionHelper/releases/tag/data-v1)** 下载：
+
+| 文件 | 体积 | 放到哪里 |
+| --- | --- | --- |
+| [`games.csv`](https://github.com/Ellie2021141461073/GameCollectionHelper/releases/download/data-v1/games.csv) | 395 MB | 项目根目录 |
+| [`steam_games-30000-2026-11-20.snapshot`](https://github.com/Ellie2021141461073/GameCollectionHelper/releases/download/data-v1/steam_games-30000-2026-11-20.snapshot) | 247 MB | 任意路径，用于恢复向量库 |
 
 ```text
 GameCollectionHelper/
   games.csv
 ```
 
-BGE-M3 模型和 Qdrant 向量数据属于可重新生成的运行数据，也不提交到 Git：
+`games.csv` 只放根目录即可，`/` 总览页会自动读取；不需要 Steam Web API Key。
 
-- 首次运行推荐服务时，BGE-M3 会从 Hugging Face 下载。
-- Qdrant 数据需要运行 `recommender.enrich_qdrant` 重新生成，或从项目发布页单独下载。
+### 恢复 30,000 条向量库（可选）
+
+只有演示 `/recommend` 智能推荐才需要。快照里已经包含 1024 维向量、LLM 标签与中文摘要，
+**恢复后不需要重新调用 LLM**：
+
+```bash
+docker compose up -d qdrant
+
+curl -X POST "http://127.0.0.1:6333/collections/steam_games/snapshots/upload?priority=snapshot" \
+     -F "snapshot=@steam_games-30000-2026-11-20.snapshot"
+
+docker compose restart recommender
+curl http://127.0.0.1:8000/status      # 应返回 "documents": 30000
+```
+
+目标 Qdrant 版本为 `v1.20.2`（`docker-compose.yml` 已锁定）。校验和与数据概况见发布页说明。
+
+也可以完全跳过下载，自己重建：
+
+- 首次运行推荐服务时，BGE-M3 会从 Hugging Face 下载（约 2.3 GB）。
+- 向量库用 `python -m recommender.enrich_qdrant --order-by reviews --limit 30000` 重新生成，
+  按网关限速实测约 4.5 小时、约 6.9 M tokens（见 [recommender/README.md](recommender/README.md)）。
 
 ## 实时扫描
 

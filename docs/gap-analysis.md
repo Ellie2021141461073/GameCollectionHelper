@@ -18,7 +18,7 @@
 
 1. **🔴 环境跑不起来**——没有 `node_modules`、没有 Python 虚拟环境（`fastapi`/`torch`/`sentence-transformers` 全缺）、BGE-M3 模型未下载，且 `.env.local` 指定 `EMBEDDING_DEVICE=cuda` 但机器上没有 CUDA 版 PyTorch。
 2. **🟠 报告要的「实验与讨论」几乎没有素材**——没有评测集、没有消融实验、没有延迟基准、没有「增强前 vs 增强后」对比。题目明确要求报告含 experiments and discussions，这部分目前是空白。
-3. **🟠 提交物缺失**——没有报告、没有幻灯片、没有**全体签名的贡献声明页**（缺这一页会 **desk reject**）；README 让用户去 GitHub Releases 下 `games.csv`，但**仓库 0 个 Release**。
+3. **🟠 提交物缺失**——没有报告、没有幻灯片、没有**全体签名的贡献声明页**（缺这一页会 **desk reject**）；README 让用户去 GitHub Releases 下 `games.csv`，但**仓库 0 个 Release**（已修复，见 §7.4 后的说明）。
 
 下面逐项给出证据与补齐方案。
 
@@ -146,6 +146,7 @@ DEEPSEEK_MODEL=CS5351/DeepSeek-V4-Flash
 ### 2.5 🟠 README 指向不存在的 Release
 
 `README.md` 第 21 行写「源码仓库不提交约 395 MB 的 `games.csv`。请从 GitHub Releases 下载」，但实测**远程 Release 数为 0**。助教或组员克隆后无数据可跑，属于交付物断链。
+（已修复：发布页 [data-v1](https://github.com/Ellie2021141461073/GameCollectionHelper/releases/tag/data-v1) 现提供 `games.csv` 与 3 万条向量快照，README 已改为直链。）
 
 ### 2.6 🟠 提交物三件套全缺
 
@@ -334,10 +335,13 @@ DEEPSEEK_MODEL=CS5351/DeepSeek-V4-Flash
 
 | 项 | 说明 |
 | --- | --- |
-| 重建索引 | 现索引缺少热门游戏（见 §8.1），需 `--order-by reviews --reset` 重跑，成本约 3 万次 LLM 调用 |
+| 重建索引 | 已完成，见 §10（30,000 条）。要扩到 46,018 条还需约 7.3 小时 |
 | 评测集与 `evaluate.py` | Recall@k / NDCG 与 BM25/向量/RRF 消融；属报告素材，本轮按要求跳过 |
-| Release 上传 `games.csv` | README 第 21 行的下载链接目前是死链 |
 | LICENSE | 属法务决策，未擅自添加 |
+
+> `games.csv` 与 30,000 条向量快照已发布到 Release
+> **[data-v1](https://github.com/Ellie2021141461073/GameCollectionHelper/releases/tag/data-v1)**，
+> README 里原先指向空 Releases 的死链已改为直链。
 
 ---
 

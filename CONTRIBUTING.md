@@ -128,3 +128,42 @@ git diff --cached --stat    # 确认改动量合理（几十 KB，不是几百 M
 最关键的一条：`recommender/` 下的 `text.py`、`ranking.py`、`clean.py`、
 `selection.py`、`dataset_stats.py` **只能依赖标准库**，否则零依赖单测会失效。
 容器编排（`docker/`、`docker-compose.yml`）属基础设施，不参与 Python 包依赖图。
+
+## 7. 标签与数据发布
+
+`games.csv`（395 MB）和向量库快照（247 MB）体积太大，不能进 git，
+通过 **GitHub Release** 分发。约定：
+
+- **一次数据修订 = 一个新 tag**，命名 `data-vN`（下一个是 `data-v2`）。
+- **绝不移动已发布的 tag。** 移动会让"当时下载到的那份"无法复现，也让
+  `data-v1` 究竟对应哪份数据变得不可考。要改数据就发 `data-v2`。
+- tag 打在与该数据版本对应的**文档提交**上：README 的直链表、SHA256、
+  数据概况都要已经在这个提交里。
+
+标准流程（顺序有意义）：
+
+```bash
+# 1. 数据就绪后先算校验和，写进发布说明
+sha256sum games.csv steam_games-*.snapshot
+
+# 2. 先把文档提交推到分支（README 直链、数据概况）
+git push origin feature-c
+
+# 3. 显式建 tag 并推送 —— 不要用 gh release create --target 隐式建
+git tag -a data-v2 -m "data-v2: 30,000 items, bge-m3 + DeepSeek-V4-Flash"
+git push origin data-v2
+
+# 4. 基于已有 tag 创建 release 并上传资产
+gh release create data-v2 \
+  --title "数据分发包：..." \
+  --notes-file release-notes.md \
+  games.csv steam_games-<date>.snapshot
+```
+
+为什么第 3 步要显式建 tag：若让 `gh release create --target <branch>` 隐式创建，
+release 记录里的 `targetCommitish` 会存成**分支名**；分支一旦改名或删除，
+这个字段就指向一个不存在的分支（`data-v1` 就留下了已删除的
+`feature-engineering-baseline`）。先建 tag 再建 release 可以避开这一点。
+
+> `data-v1` 当时由 `gh` 自动创建成轻量 tag；后续建议用 `git tag -a`（annotated），
+> 能附带说明与署名。无需回溯修改 `data-v1`。

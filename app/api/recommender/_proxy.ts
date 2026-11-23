@@ -9,7 +9,10 @@ export async function proxyRecommender(path: string, params?: Record<string, str
   try {
     const response = await fetch(url, {
       cache: 'no-store',
-      signal: AbortSignal.timeout(35_000),
+      // The first /search after a restart has to load BGE-M3 into the device and
+      // explain every hit, which can exceed 35 s. A short timeout surfaced that
+      // as a misleading 503 "service unavailable" even though the API answered.
+      signal: AbortSignal.timeout(120_000),
     });
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });

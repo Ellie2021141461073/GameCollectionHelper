@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { normalizeSteamImageUrl } from '@/lib/steamParse';
 
 type Recommendation = {
@@ -41,6 +41,7 @@ export default function RecommendationExplorer() {
   const [status, setStatus] = useState<ServiceStatus | null>(null);
   const [response, setResponse] = useState<RecommendResponse | null>(null);
   const [error, setError] = useState('');
+  const bootstrapped = useRef(false);
 
   useEffect(() => {
     fetch('/api/recommender/status', { cache: 'no-store' })
@@ -51,15 +52,14 @@ export default function RecommendationExplorer() {
       .catch(() => setStatus({ ready: false, error: '无法连接推荐服务' }));
   }, []);
 
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    const value = query.trim();
-    if (!value || loading) return;
+  const runSearch = async (nextMode: 'similar' | 'search', rawValue: string) => {
+    const value = rawValue.trim();
+    if (!value) return;
     setLoading(true);
     setError('');
     setResponse(null);
     try {
-      const endpoint = mode === 'similar' ? 'similar' : 'search';
+      const endpoint = nextMode === 'similar' ? 'similar' : 'search';
       const result = await fetch(`/api/recommender/${endpoint}?q=${encodeURIComponent(value)}&limit=10`, {
         cache: 'no-store',
       });
@@ -71,6 +71,26 @@ export default function RecommendationExplorer() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Deep link: /recommend?mode=search&q=... renders the result immediately, so a
+  // search can be bookmarked, shared, or screenshotted without typing.
+  useEffect(() => {
+    if (bootstrapped.current) return;
+    bootstrapped.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const value = params.get('q');
+    if (!value) return;
+    const nextMode: 'similar' | 'search' = params.get('mode') === 'search' ? 'search' : 'similar';
+    setMode(nextMode);
+    setQuery(value);
+    void runSearch(nextMode, value);
+  }, []);
+
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (loading) return;
+    void runSearch(mode, query);
   };
 
   return <div className="rec-page">

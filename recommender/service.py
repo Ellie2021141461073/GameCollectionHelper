@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .chat import chat_configured, create_json_completion, get_chat_config
 from .clean import normalize_name
 from .embeddings import embed_query, embedding_info
-from .ranking import BM25Index, merge_rankings
+from .ranking import QUALITY_WEIGHT, BM25Index, merge_rankings
 from .store import COLLECTION_NAME, PROJECT_ROOT, all_points, get_client
 from .text import tokenize
 
@@ -298,21 +298,39 @@ def similar(q: str = Query(..., min_length=1), limit: int = Query(8, ge=1, le=20
 
 
 @app.get("/search")
-def search(q: str = Query(..., min_length=1), limit: int = Query(8, ge=1, le=20)):
+def search(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(8, ge=1, le=20),
+    retrieval: str = Query(
+        "hybrid",
+        pattern="^(hybrid|vector|bm25)$",
+        description=(
+            "hybrid = RRF over both retrievers; "
+            "vector / bm25 = a single retriever, for ablations"
+        ),
+    ),
+):
     state = load_state()
-    vector = embed_query(q)
-    vector_results = qdrant_search(state.client, vector, 50)
-    lexical_results = state.bm25.search(tokenize(q)[:100], 50)
+    # bm25 mode never embeds the query, which also skips loading the model.
+    vector_results: list[tuple[int, float]] = []
+    if retrieval in {"hybrid", "vector"}:
+        vector_results = qdrant_search(state.client, embed_query(q), 50)
+    lexical_results = state.bm25.search(tokenize(q)[:100], 50) if retrieval != "vector" else []
     ranked = merge_rankings(
         vector_results=vector_results,
         lexical_results=lexical_results,
         lexical_ids=[document.app_id for document in state.documents],
         payloads={document.app_id: document.payload for document in state.documents},
         limit=limit,
+        # The single-retriever modes are ablations: keep that retriever's own
+        # order and disable the quality prior, otherwise quality re-sorts the
+        # list and the comparison stops measuring retrieval.
+        quality_weight=QUALITY_WEIGHT if retrieval == "hybrid" else 0.0,
     )
     source = {"app_id": None, "name": "智能搜索", "summary": q, "llm_tags": tokenize(q)[:8]}
     return {
         "mode": "search",
+        "retrieval": retrieval,
         "query": q,
         "results": response_items(source, ranked, q),
     }

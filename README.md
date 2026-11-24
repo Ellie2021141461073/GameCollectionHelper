@@ -91,6 +91,10 @@ GCP 部署与排错步骤见
 主页的「智能推荐」入口会进入该页面。推荐 Key 只保存在服务端 `.env.local`，
 不得使用 `NEXT_PUBLIC_` 前缀或提交到 Git。
 
+技术细节（Qdrant 数据写入、相似检索、BM25+向量混合排序、DeepSeek 解释的原理与实现）
+见 **[docs/technical/README.md](docs/technical/README.md)**；
+实测截图与消融实验数据见 **[docs/experiments/README.md](docs/experiments/README.md)**。
+
 ## 容器化运行
 
 整套服务可以用 Docker Compose 一键拉起（Qdrant server + FastAPI + Next.js）：

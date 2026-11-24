@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  # Every branch push: feature branches need feedback before a PR is opened.
+  # (Was restricted to main/dev, which silently skipped CI on feature-* pushes.)
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: web (typecheck, test, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        # games.csv is intentionally absent: it is not read at build time, the
+        # /api/deals handler reads it per request.
+        run: npm run build
+
+  python-unit:
+    name: python (stdlib only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # No pip install on purpose: clean.py, text.py and ranking.py must stay
+      # importable without any third-party package, and the API contract tests
+      # skip themselves when fastapi is missing.
+      - name: Run the dependency-free tests
+        run: python -m unittest discover -s tests/python -v
+
+  python-api:
+    name: python (full dev suite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: python -m ruff check recommender tests/python scripts
+
+      - name: Tests
+        run: python -m unittest discover -s tests/python -v
+
+      - name: Import the service entrypoint
+        env:
+          DEEPSEEK_API_KEY: ''
+        run: python -c "import recommender.service as s; print(len(s.app.routes), 'routes')"
+
+  compose:
+    name: docker compose config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Docker and the compose plugin are preinstalled on the hosted runner.
+      # This only validates the file: no image is built and .env.local is absent
+      # on purpose, which exercises the `required: false` env_file entry.
+      - name: Validate the compose file
+        run: docker compose config --quiet
+

@@ -15,9 +15,9 @@ def main():
         # the user did not select.
         os.environ["OPENAI_API_KEY"] = "card-page-key-must-not-be-reused"
 
-        from recommender.store import COLLECTION_NAME, ensure_collection, get_client
         from recommender.chat import chat_configured, deepseek_configured
         from recommender.service import app
+        from recommender.store import COLLECTION_NAME, ensure_collection, get_client
 
         assert not deepseek_configured()
         assert not chat_configured()
@@ -33,7 +33,8 @@ def main():
             }),
             PointStruct(id=2, vector=[0.9, 0.1] + [0.0] * 1022, payload={
                 "app_id": 2, "name": "Beta Farm", "normalized_name": "beta farm",
-                "search_text": "farming building simulation", "summary": "building and farming game",
+                "search_text": "farming building simulation",
+                "summary": "building and farming game",
                 "llm_tags": ["farming", "building"], "genres": ["Simulation"],
                 "positive": 80, "negative": 4, "recommendations": 80,
             }),
@@ -70,7 +71,9 @@ def main():
                 "similar_results": [item["name"] for item in similar.json().get("results", [])],
                 "search": search.status_code,
                 "search_results": [item["name"] for item in search.json().get("results", [])],
-                "explanations": [bool(item["explanation"]) for item in search.json().get("results", [])],
+                "explanations": [
+                    bool(item["explanation"]) for item in search.json().get("results", [])
+                ],
             })
 
 

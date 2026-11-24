@@ -1,0 +1,86 @@
+# GameCollectionHelper — full stack (Qdrant server + FastAPI recommender + Next.js).
+#
+#   docker compose up -d qdrant                       # 1. start the vector store
+#   python -m recommender.migrate_qdrant              # 2. copy the 20k vectors in
+#   docker compose up -d --build recommender web      # 3. start the app
+#
+# Then: http://localhost:3000  (app) and http://localhost:8000/status (API).
+#
+# Differences from running on the host:
+#   * Qdrant runs as a server, so several processes may read it at once
+#     (the embedded local store is single-process).
+#   * Embeddings run on CPU: Docker Desktop does not hand the host GPU to Linux
+#     containers without the NVIDIA container toolkit.
+#   * games.csv and the BGE-M3 weights are mounted from the host, not baked in.
+
+name: gamecollectionhelper
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.20.2
+    restart: unless-stopped
+    ports:
+      # Bound to loopback: the store holds no auth by default.
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    volumes:
+      - qdrant-storage:/qdrant/storage
+    healthcheck:
+      # The image has no curl/wget, but it does ship bash.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  recommender:
+    image: gamecollectionhelper/recommender:local
+    build:
+      context: .
+      dockerfile: docker/recommender.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    env_file:
+      # Reuses the host API key when present; the service degrades to
+      # tag-based explanations when it is absent.
+      - path: .env.local
+        required: false
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: steam_games
+      EMBEDDING_DEVICE: cpu
+      EMBEDDING_DTYPE: float32
+      EMBEDDING_BATCH_SIZE: "8"
+      EMBEDDING_MAX_SEQ_LENGTH: "1024"
+      RECOMMENDER_CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # Reuse the 2.2 GB weights already cached on the host instead of
+      # downloading them again on first start.
+      - ./recommender/data/embeddings-bge-m3:/app/recommender/data/embeddings-bge-m3
+
+  web:
+    image: gamecollectionhelper/web:local
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      recommender:
+        condition: service_healthy
+    environment:
+      RECOMMENDER_API_URL: http://recommender:8000
+      RECOMMENDER_CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      # /api/deals streams this file per request; it is 395 MB, so it is never
+      # copied into the image.
+      - ./games.csv:/app/games.csv:ro
+
+volumes:
+  qdrant-storage:
+    name: gamecollectionhelper-qdrant-storage

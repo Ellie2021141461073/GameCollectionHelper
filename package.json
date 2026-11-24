@@ -2,12 +2,20 @@
   "name": "gamecollectionhelper",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "test:py": "python -m unittest discover -s tests/python",
+    "test:acceptance": "python scripts/acceptance_test.py",
+    "lint:py": "python -m ruff check recommender tests/python scripts",
+    "data:stats": "python -m recommender.dataset_stats",
+    "check": "npm run typecheck && npm run lint:py && npm test && npm run test:py",
     "recommend:api": "python -m uvicorn recommender.service:app --host 127.0.0.1 --port 8000",
     "recommend:enrich": "python -m recommender.enrich_qdrant",
     "recommend:test": "python -m recommender.smoke_test"
